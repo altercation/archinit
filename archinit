@@ -105,14 +105,14 @@ sgdisk --mbrtogpt $DRIVE
 
 if [[ ${(L)efi} =~ (true|yes|1) ]]; then
     # efi (conforming to freedesktop.org $ESP partition code)
-    BOOT=(name efi type ef00)
+    BOOT=(name EFI type ef00)
 else
     # non efi boot part (conforming to freedesktop.org $BOOT partition code)
-    BOOT=(name boot type ea00)
+    BOOT=(name BOOT type ea00)
 fi
 
 sgdisk --new=1:0:+512M --change-name=1:$BOOT[name] -t 1:$BOOT[type] $DRIVE
-
+mkfs.fat -F32 -n $BOOT[name] ${DRIVE}1
 
 # ---------------------------------------------------------------------------
 # make partitions
@@ -172,7 +172,8 @@ swapon -d -L swap # activate swap device
 # root filesystem
 mkfs.btrfs --label system $DEVICE[system]
 # temp mount for subvol creation
-mount -t btrfs $DEVICE[system] $MOUNT
+#mount -t btrfs $DEVICE[system] $MOUNT
+mount -t btrfs LABEL=system $MOUNT
 
 # subvolumes will be created, we'll unmount, then remount subvols
 # specifically, this creates separate subvolumes for / (root) and /home
@@ -185,9 +186,12 @@ o=defaults,x-mount.mkdir
 o=defaults,x-mount.mkdir
 #o_btrfs=$o,compress=lzo,space_cache,autodefrag,inode_cache,ssd,discard
 o_btrfs=$o
-mount -t btrfs -o subvol=root,$o_btrfs $DEVICE[system] $MOUNT
-mount -t btrfs -o subvol=home,$o_btrfs $DEVICE[system] $MOUNT/home
-mount -o $o -L ${BOOT[name]} $MOUNT/boot
+#mount -t btrfs -o subvol=root,$o_btrfs $DEVICE[system] $MOUNT
+#mount -t btrfs -o subvol=home,$o_btrfs $DEVICE[system] $MOUNT/home
+mount -t btrfs -o subvol=root,$o_btrfs LABEL=system $MOUNT
+mount -t btrfs -o subvol=home,$o_btrfs LABEL=system $MOUNT/home
+#mount -o $o -L $BOOT[name] $MOUNT/boot
+mount -o $o LABEL=$BOOT[name] $MOUNT/boot
 
 
 # ---------------------------------------------------------------------------
