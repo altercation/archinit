@@ -77,7 +77,7 @@ gnome-defaults-list
 RAM="${$(< /proc/meminfo)[2]}"
 SWAPSIZE="$(( $RAM / 1024 + 1 ))M"
 DRIVE=/dev/sda
-MNT=/mnt
+MOUNT=/mnt
 [[ -d /sys/firmware/efi/efivars ]] && efi=true || efi=false
 
 
