@@ -1,17 +1,17 @@
-#!/usr/bin/env zsh
+#!/usr/bin/zsh
+
 setopt ERR_EXIT EXTENDED_GLOB
 
-# ----------------------------------------------------------------------
-# Storage initialization commmands
-# Dell XPS 13 (2015) Pure Arch Install Script
-# Will be using SATA hw based encryption, so no LUKS
-# Going for a pure btrfs UEFI install, single partition
-# ----------------------------------------------------------------------
 # curl -LO http://links.ethanschoonover.com/archinit
 
+typeset -A BOOT CONFIG DEVICE INIT INSTALL MKINITCPIO OPTIONS
+typeset -a PACKAGES SERVICES
 
-typeset -A CONFIG INSTALL INIT MKINITCPIO
-typeset -a INSTALLERS
+TRAPZERR () { print "\nUNHANDLED ERROR"; exit }
+
+# ---------------------------------------------------------------------------
+# main config and system options
+# ---------------------------------------------------------------------------
 
 CONFIG=(
 username    es
@@ -21,126 +21,294 @@ timezone    America/Los_Angeles
 locale      "en_US.UTF-8 UTF-8"
 keymap      us
 font        Lat2-Terminus16
-drive       /dev/sda
+)
+# acceptable fonts
+# ter-u24n
+# Lat2-Terminus16
+
+OPTIONS=(
+filesystem  btrfs
+fsoptions   default
+encryption  true
+efi         false
+bootloader  grub
+)
+# NOTE: bootloader should probably be determined by EFI or no EFI
+
+# packages to be installed via pacstrap
+PACKAGES=(
+base
+base-devel
+btrfs-progs
+git
+openssh
+sudo
+terminus
+vim
+zsh
+nvidia
+nvidia-utils
+nvidia-libgl
+xorg
+gnome
+gnome-extras
+networkmanager
+network-manager-applet
 )
 
-# purely cosmetic
+# services that will be enabled via "systemctl enable ..."
+SERVICES=(
+gdm
+NetworkManager
+)
+
+# aur packages to either install or queue up for reboot install
+AUR=(
+aura-bin
+google-chrome
+gnome-defaults-list
+)
+
+
+# ---------------------------------------------------------------------------
+# system values (set manually if desired)
+# ---------------------------------------------------------------------------
+
+RAM="${$(< /proc/meminfo)[2]}"
+SWAPSIZE="$(( $RAM / 1024 + 1 ))M"
+DRIVE=/dev/sda
+MNT=/mnt
+[[ -d /sys/firmware/efi/efivars ]] && efi=true || efi=false
+
+
+# ---------------------------------------------------------------------------
+# preflight
+# ---------------------------------------------------------------------------
+
+# purely cosmetic during installation
 setfont $CONFIG[font]
 
-TRAPZERR () { print "\nUNHANDLED ERROR"; exit }
 
-# ----------------------------------------------------------------------
-# partitioning (drive contents ERASED)
-# ----------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# destructive drive erase
+# ---------------------------------------------------------------------------
 
-# Scorched earth - erase all GPT and MBR structures
-# Make EFI system partition
-# Make swap partition
-# Make system partition
-sgdisk -zog $CONFIG[drive]
-sgdisk --new=1:0:+512M -c 1:"EFI System Partition" -t 1:ef00 $CONFIG[drive]
-sgdisk --new=2:0:+$(( $(print ${$(cat /proc/meminfo | grep -i memtotal)[2]}) / 1000000 ))G -c 2:"Swap Partition" -t 2:8200 $CONFIG[drive]
-sgdisk --new=3:0:0 -c 3:"Linux System Partition" -t 3:8304 $CONFIG[drive]
+print "remove this line to proceed to destructive drive erase" && exit
 
-# Format EFI system partition
-# Format swap partition
-# Format system partition
-mkfs.fat -F32 -n EFI $CONFIG[drive]1
-mkswap -L Swap $CONFIG[drive]2
-mkfs.btrfs --force --label System $CONFIG[drive]3
+sgdisk --zap-all $DRIVE
+sgdisk --mbrtogpt $DRIVE
 
-# Activate swap
-# Mount filesystem
+
+# ---------------------------------------------------------------------------
+# creation of efi or non-efi boot partition
+# ---------------------------------------------------------------------------
+
+if [[ ${(L)efi} =~ (true|yes|1) ]]; then
+    # efi (conforming to freedesktop.org $ESP partition code)
+    BOOT=(name efi type ef00)
+else
+    # non efi boot part (conforming to freedesktop.org $BOOT partition code)
+    BOOT=(name boot type ea00)
+fi
+
+sgdisk --new=1:0:+512M --change-name=1:$BOOT[name] -t 1:$BOOT[type] $DRIVE
+
+
+# ---------------------------------------------------------------------------
+# make partitions
+# ---------------------------------------------------------------------------
+# http://www.freedesktop.org/wiki/Specifications/DiscoverablePartitionsSpec/
+#
+# encrypted setup: single encrypted partition with lvm on it
+# non-encrypted: just partitions
+
+if [[ ${(L)OPTIONS[encryption]} =~ (true|yes|1) ]]; then
+
+    # get a passphrase and confirm
+    while ! ${${${pass::=$(read -Ers "?Passphrase: ")}:#$(\
+        read -Ers "?$(print "\nConfirmation: ")")}:+false};
+        do print "\nDidn't match--try again:\n"; done; print
+
+    # make partition, encrypt and open for lvm volume setup
+    sgdisk --new=0:0:0 --change-name=0:cryptlvm /dev/sda
+    print -r $pass | cryptsetup luksFormat /dev/disk/by-partlabel/cryptlvm
+    print -r $pass | cryptsetup open /dev/disk/by-partlabel/cryptlvm lvm
+
+    # lvm configurations
+    pvcreate /dev/mapper/lvm # physical volume
+    vgcreate storage /dev/mapper/lvm # volume group
+    lvcreate -L 8G storage  -n swap # logical volume
+    lvcreate -l 100%FREE storage -n system # logical volume
+
+    DEVICE[swap]=/dev/mapper/storage-swap
+    DEVICE[system]=/dev/mapper/storage-system
+
+else
+
+    # Make swap partition
+    # 8200 == 0657FD6D-A4AB-43C4-84E5-0933C84B4F4F == Linux swap
+    sgdisk --new=2:0:+$SWAPSIZE -c 2:"swap" -t 2:8200 $DRIVE
+    swap=${DRIVE}2
+
+    # Make system partition
+    # 8304 == 4f68bce3-e8cd-4db1-96e7-fbcaf984b709 == Linux x86-64 root
+    sgdisk --new=3:0:0 -c 3:"root" -t 3:8304 $DRIVE
+    root=${DRIVE}3
+
+    DEVICE[swap]=${DRIVE}2
+    DEVICE[system]=${DRIVE}3
+
+fi
+
+
+# ---------------------------------------------------------------------------
+# make swap & filesystems
+# ---------------------------------------------------------------------------
+
+# swap
+mkswap -L swap $DEVICE[swap] # make swap device
+swapon -d -L swap # activate swap device
+
+# root filesystem
+mkfs.btrfs --label system $DEVICE[system]
+# temp mount for subvol creation
+mount -t btrfs $DEVICE[system] $MOUNT
+
+# subvolumes will be created, we'll unmount, then remount subvols
+# specifically, this creates separate subvolumes for / (root) and /home
+# for easier snapshot and rollback
+btrfs subvolume create $MOUNT/root
+btrfs subvolume set-default ${$(btrfs subvolume list $MOUNT)[(w)2]} $MOUNT
+btrfs subvolume create $MOUNT/home
+umount -R $MOUNT
 o=defaults,x-mount.mkdir
-o_btrfs=$o,compress=lzo,space_cache,autodefrag,ssd,discard,noatime
-swapon -d -L Swap
-mount -o $o_btrfs -L System /mnt
-mount -o $o -L EFI /mnt/boot
+o=defaults,x-mount.mkdir
+#o_btrfs=$o,compress=lzo,space_cache,autodefrag,inode_cache,ssd,discard
+o_btrfs=$o
+mount -t btrfs -o subvol=root,$o_btrfs $DEVICE[system] $MOUNT
+mount -t btrfs -o subvol=home,$o_btrfs $DEVICE[system] $MOUNT/home
+mount -o $o -L ${BOOT[name]} $MOUNT/boot
 
-# Install base system
-pacstrap /mnt base base-devel btrfs-progs zsh vim terminus
+
+# ---------------------------------------------------------------------------
+# install packages
+# ---------------------------------------------------------------------------
+pacstrap $MOUNT $PACKAGES
 
 # Generate fstab (though I want to experiment with systemd auto detection based on filesystem type)
-genfstab -L -p /mnt >> /mnt/etc/fstab_off
+#genfstab -L -p $CONFIG[mount] >> $MOUNT/etc/fstab_off
 
+#arch-chroot $CONFIG[mount] /usr/bin/zsh
 
-arch-chroot /mnt /usr/bin/zsh
+# ---------------------------------------------------------------------------
+# system config
+# ---------------------------------------------------------------------------
+chrooted () { arch-chroot $MOUNT sh -c "$*"; }
+
+chrooted hwclock --systohc --utc
+
+systemd-firstboot --root=$MOUNT \
+	--locale=${${=CONFIG[locale]}[1]} \
+	--locale-messages=${${=CONFIG[locale]}[1]} \
+	--timezone=$CONFIG[timezone] \
+	--hostname=$CONFIG[hostname]
+
+print "en_US.UTF-8 UTF-8" >> $MOUNT/etc/locale.gen
+chrooted locale-gen
+
+cat > $MOUNT/etc/vconsole.conf << EOF
+FONT=$CONFIG[font]
+EOF
 
 # ---------------------------------------------------
-# chroot commands
+# bootloader
 # ---------------------------------------------------
+if [[ ${(L)efi} =~ (true|yes|1) ]]; then
+    chrooted bootctl install
+    # # create /boot/loader/loader.conf
+    # cat > /boot/loader/loader.conf << EOF
+    # timeout 3
+    # default arch*
+    # EOF
+    # cat > /boot/loader/entries/arch.conf << EOF
+    # title       Arch Linux
+    # linux       /vmlinuz-linux
+    # initrd      /initramfs-linux.img
+    # options     root=LABEL=System rw resume=LABEL=Swap quiet
+    # EOF
+else
+    pacstrap $MOUNT grub
+    chrooted "grub-install $DRIVE; grub-mkconfig -o /boot/grub/grub.cfg"
+    #pacstrap $MOUNT syslinux gptfdisk mtools
+fi
 
-setfont ter-u24n
-print "en_US.UTF-8 UTF-8" >> /etc/locale.gen
-locale-gen
-print "LANG=en_US.UTF-8" > /etc/locale.conf
-export LANG=en_US.UTF-8
-ln -s /usr/share/zoneinfo/America/Los_Angeles /etc/localtime
-hwclock --systohc --utc
-echo myhostname > /etc/hostname
-#edit /etc/hosts the same way... see beginners guide
-
-cat > /etc/vconsole.conf << EOF
-FONT=ter-u24n
-EOF
-
-pacman -S gummiboot
-gummiboot --path=/boot install
-# create /boot/loader/loader.conf
-cat > /boot/loader/loader.conf << EOF
-timeout 3
-default arch*
-EOF
-cat > /boot/loader/entries/arch.conf << EOF
-title       Arch Linux
-linux       /vmlinuz-linux
-initrd      /initramfs-linux.img
-options     root=LABEL=System rw resume=LABEL=Swap quiet
-EOF
-
-mv /etc/mkinitcpio.conf /etc/mkinitcpio.orig
-cat > /etc/mkinitcpio.conf << EOF
-MODULES="i915"
-BINARIES=""
-FILES=""
-HOOKS="systemd sd-vconsole autodetect modconf block filesystems keyboard fsck"
-EOF
-
-mkinitcpio -p linux
 
 # ---------------------------------------------------
-# after reboot
+# enable services
 # ---------------------------------------------------
-localectl set-locale LANG=en_US.UTF-8
-hostnamectl set-hostname HOSTNAME
-# set hw clock to UTC and then set timezone
-timedatectl set-local-rtc 0
-timedatectl set-timezone America/Los_Angeles
-timedatectl set-ntp true
 
-pacman -S xorg xorg-server xf86-video-intel libva libva-intel-driver mesa mesa-libgl
-pacman -S gnome gnome-extra gnome-mplayer terminator
-pacman -S networkmanager network-manager-applet
-pacman -S openssh
+for servicename in $SERVICES; do
+   systemctl enable $servicename
+done
 
-systemctl enable gdm
-systemctl enable NetworkManager
 
-# switch to uxa graphics due to weird video playback artifacts under sna
-cat > /etc/X11/xorg.conf.d/20-intel.conf << EOF
-Section "Device"
-   Identifier  "Intel Graphics"
-   Driver      "intel"
-   Option      "AccelMethod"  "uxa"
-EndSection
-EOF
+# ---------------------------------------------------
+# users / passwords
+# ---------------------------------------------------
+
+useradd -m \
+	-G wheel \
+	-s /usr/bin/$CONFIG[shell] \
+	$CONFIG[username]
+
+for username in root $CONFIG[username]; do
+    print "Enter password for $username"
+    while ! ${${${pass::=$(read -Ers "?Passphrase: ")}:#$(\
+        read -Ers "?$(print "\nConfirmation: ")")}:+false};
+        do print "\nDidn't match--try again:\n"; done; print
+    print -r $user:$pass | chpasswd
+done
+
+tmpfile=$(mktemp)
+echo "%wheel ALL=(ALL) NOPASSWD: ALL" > $tmpfile
+visudo -cf $tmpfile \
+    && { mv $tmpfile $MOUNT/etc/sudoers.d/wheel } \
+    || { print "ERROR updating sudoers; no change made" }
+
+
+# ---------------------------------------------------
+# aur
+# ---------------------------------------------------
+
+#chrooted "su $CONFIG[username] -c mkdir -pr /home/$CONFIG[username]/sys/aur"
+
+# ---------------------------------------------------
+# notes
+# ---------------------------------------------------
+
+# mv /etc/mkinitcpio.conf /etc/mkinitcpio.orig
+# cat > /etc/mkinitcpio.conf << EOF
+# MODULES="i915"
+# BINARIES=""
+# FILES=""
+# HOOKS="systemd sd-vconsole autodetect modconf block filesystems keyboard fsck"
+# EOF
+#
+# mkinitcpio -p linux
+##localectl set-locale LANG=en_US.UTF-8
+##hostnamectl set-hostname HOSTNAME
+### set hw clock to UTC and then set timezone
+#timedatectl set-local-rtc 0
+#timedatectl set-timezone America/Los_Angeles
+#timedatectl set-ntp true
+
 
 # queue up initial aur packages
-curl -LO https://aur.archlinux.org/packages/au/aura-bin/aura-bin.tar.gz
-curl -LO https://aur.archlinux.org/packages/go/google-chrome-dev/google-chrome-dev.tar.gz
+#curl -LO https://aur.archlinux.org/packages/au//aura-bin.tar.gz
+#curl -LO https://aur.archlinux.org/packages/go/google-chrome-dev/google-chrome-dev.tar.gz
 
 # also install from AUR:
-gnome-defaults-list
+#gnome-defaults-list
 
 # i3
-i3-wm i3status i3lock
+#i3-wm i3status i3lock

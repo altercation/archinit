@@ -1,0 +1,146 @@
+#!/usr/bin/env zsh
+setopt ERR_EXIT EXTENDED_GLOB
+
+# ----------------------------------------------------------------------
+# Storage initialization commmands
+# Dell XPS 13 (2015) Pure Arch Install Script
+# Will be using SATA hw based encryption, so no LUKS
+# Going for a pure btrfs UEFI install, single partition
+# ----------------------------------------------------------------------
+# curl -LO http://links.ethanschoonover.com/archinit
+
+
+typeset -A CONFIG INSTALL INIT MKINITCPIO
+typeset -a INSTALLERS
+
+CONFIG=(
+username    es
+shell       zsh
+hostname    naptime
+timezone    America/Los_Angeles
+locale      "en_US.UTF-8 UTF-8"
+keymap      us
+font        Lat2-Terminus16
+drive       /dev/sda
+)
+
+# purely cosmetic
+setfont $CONFIG[font]
+
+TRAPZERR () { print "\nUNHANDLED ERROR"; exit }
+
+# ----------------------------------------------------------------------
+# partitioning (drive contents ERASED)
+# ----------------------------------------------------------------------
+
+# Scorched earth - erase all GPT and MBR structures
+# Make EFI system partition
+# Make swap partition
+# Make system partition
+sgdisk -zog $CONFIG[drive]
+sgdisk --new=1:0:+512M -c 1:"EFI System Partition" -t 1:ef00 $CONFIG[drive]
+sgdisk --new=2:0:+$(( $(print ${$(cat /proc/meminfo | grep -i memtotal)[2]}) / 1000000 ))G -c 2:"Swap Partition" -t 2:8200 $CONFIG[drive]
+sgdisk --new=3:0:0 -c 3:"Linux System Partition" -t 3:8304 $CONFIG[drive]
+
+# Format EFI system partition
+# Format swap partition
+# Format system partition
+mkfs.fat -F32 -n EFI $CONFIG[drive]1
+mkswap -L Swap $CONFIG[drive]2
+mkfs.btrfs --force --label System $CONFIG[drive]3
+
+# Activate swap
+# Mount filesystem
+o=defaults,x-mount.mkdir
+o_btrfs=$o,compress=lzo,space_cache,autodefrag,ssd,discard,noatime
+swapon -d -L Swap
+mount -o $o_btrfs -L System /mnt
+mount -o $o -L EFI /mnt/boot
+
+# Install base system
+pacstrap /mnt base base-devel btrfs-progs zsh vim terminus
+
+# Generate fstab (though I want to experiment with systemd auto detection based on filesystem type)
+genfstab -L -p /mnt >> /mnt/etc/fstab_off
+
+
+arch-chroot /mnt /usr/bin/zsh
+
+# ---------------------------------------------------
+# chroot commands
+# ---------------------------------------------------
+
+setfont ter-u24n
+print "en_US.UTF-8 UTF-8" >> /etc/locale.gen
+locale-gen
+print "LANG=en_US.UTF-8" > /etc/locale.conf
+export LANG=en_US.UTF-8
+ln -s /usr/share/zoneinfo/America/Los_Angeles /etc/localtime
+hwclock --systohc --utc
+echo myhostname > /etc/hostname
+#edit /etc/hosts the same way... see beginners guide
+
+cat > /etc/vconsole.conf << EOF
+FONT=ter-u24n
+EOF
+
+pacman -S gummiboot
+gummiboot --path=/boot install
+# create /boot/loader/loader.conf
+cat > /boot/loader/loader.conf << EOF
+timeout 3
+default arch*
+EOF
+cat > /boot/loader/entries/arch.conf << EOF
+title       Arch Linux
+linux       /vmlinuz-linux
+initrd      /initramfs-linux.img
+options     root=LABEL=System rw resume=LABEL=Swap quiet
+EOF
+
+mv /etc/mkinitcpio.conf /etc/mkinitcpio.orig
+cat > /etc/mkinitcpio.conf << EOF
+MODULES="i915"
+BINARIES=""
+FILES=""
+HOOKS="systemd sd-vconsole autodetect modconf block filesystems keyboard fsck"
+EOF
+
+mkinitcpio -p linux
+
+# ---------------------------------------------------
+# after reboot
+# ---------------------------------------------------
+localectl set-locale LANG=en_US.UTF-8
+hostnamectl set-hostname HOSTNAME
+# set hw clock to UTC and then set timezone
+timedatectl set-local-rtc 0
+timedatectl set-timezone America/Los_Angeles
+timedatectl set-ntp true
+
+pacman -S xorg xorg-server xf86-video-intel libva libva-intel-driver mesa mesa-libgl
+pacman -S gnome gnome-extra gnome-mplayer terminator
+pacman -S networkmanager network-manager-applet
+pacman -S openssh
+
+systemctl enable gdm
+systemctl enable NetworkManager
+
+# switch to uxa graphics due to weird video playback artifacts under sna
+cat > /etc/X11/xorg.conf.d/20-intel.conf << EOF
+Section "Device"
+   Identifier  "Intel Graphics"
+   Driver      "intel"
+   Option      "AccelMethod"  "uxa"
+EndSection
+EOF
+
+# queue up initial aur packages
+curl -LO https://aur.archlinux.org/packages/au/aura-bin/aura-bin.tar.gz
+curl -LO https://aur.archlinux.org/packages/go/google-chrome-dev/google-chrome-dev.tar.gz
+
+# also install from AUR:
+gnome-defaults-list
+
+# i3
+i3-wm i3status i3lock
