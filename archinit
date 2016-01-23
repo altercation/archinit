@@ -117,8 +117,6 @@ mkfs.fat -F32 -n $BOOT[name] ${DRIVE}1
 # ---------------------------------------------------------------------------
 # make partitions
 # ---------------------------------------------------------------------------
-# http://www.freedesktop.org/wiki/Specifications/DiscoverablePartitionsSpec/
-#
 # encrypted setup: single encrypted partition with lvm on it
 # non-encrypted: just partitions
 
@@ -148,12 +146,10 @@ else
     # Make swap partition
     # 8200 == 0657FD6D-A4AB-43C4-84E5-0933C84B4F4F == Linux swap
     sgdisk --new=2:0:+$SWAPSIZE -c 2:"swap" -t 2:8200 $DRIVE
-    swap=${DRIVE}2
 
     # Make system partition
     # 8304 == 4f68bce3-e8cd-4db1-96e7-fbcaf984b709 == Linux x86-64 root
     sgdisk --new=3:0:0 -c 3:"root" -t 3:8304 $DRIVE
-    root=${DRIVE}3
 
     DEVICE[swap]=${DRIVE}2
     DEVICE[system]=${DRIVE}3
@@ -170,7 +166,7 @@ mkswap -L swap $DEVICE[swap] # make swap device
 swapon -d -L swap # activate swap device
 
 # root filesystem
-mkfs.btrfs --label system $DEVICE[system]
+mkfs.btrfs --force --label system $DEVICE[system]
 # temp mount for subvol creation
 #mount -t btrfs $DEVICE[system] $MOUNT
 mount -t btrfs LABEL=system $MOUNT
@@ -199,15 +195,22 @@ mount -o $o LABEL=$BOOT[name] $MOUNT/boot
 # ---------------------------------------------------------------------------
 pacstrap $MOUNT $PACKAGES
 
-# Generate fstab (though I want to experiment with systemd auto detection based on filesystem type)
-#genfstab -L -p $CONFIG[mount] >> $MOUNT/etc/fstab_off
 
-#arch-chroot $CONFIG[mount] /usr/bin/zsh
+# ---------------------------------------------------------------------------
+# fstab
+# ---------------------------------------------------------------------------
+# Generate fstab (with no encryption, this can be skipped). See also:
+# http://www.freedesktop.org/wiki/Specifications/DiscoverablePartitionsSpec/
+
+if [[ ${(L)OPTIONS[encryption]} =~ (true|yes|1) ]]; then
+    genfstab -L -p $CONFIG[mount] > $MOUNT/etc/fstab
+fi
+
 
 # ---------------------------------------------------------------------------
 # system config
 # ---------------------------------------------------------------------------
-chrooted () { arch-chroot $MOUNT sh -c "$*"; }
+chrooted () { arch-chroot $MOUNT zsh -c "$*"; }
 
 chrooted hwclock --systohc --utc
 
@@ -223,6 +226,7 @@ chrooted locale-gen
 cat > $MOUNT/etc/vconsole.conf << EOF
 FONT=$CONFIG[font]
 EOF
+
 
 # ---------------------------------------------------
 # bootloader
@@ -286,8 +290,9 @@ visudo -cf $tmpfile \
 
 #chrooted "su $CONFIG[username] -c mkdir -pr /home/$CONFIG[username]/sys/aur"
 
+
 # ---------------------------------------------------
-# notes
+# change hooks and regenerate initcpio
 # ---------------------------------------------------
 
 # mv /etc/mkinitcpio.conf /etc/mkinitcpio.orig
@@ -299,20 +304,7 @@ visudo -cf $tmpfile \
 # EOF
 #
 # mkinitcpio -p linux
-##localectl set-locale LANG=en_US.UTF-8
-##hostnamectl set-hostname HOSTNAME
-### set hw clock to UTC and then set timezone
-#timedatectl set-local-rtc 0
-#timedatectl set-timezone America/Los_Angeles
-#timedatectl set-ntp true
 
-
-# queue up initial aur packages
-#curl -LO https://aur.archlinux.org/packages/au//aura-bin.tar.gz
-#curl -LO https://aur.archlinux.org/packages/go/google-chrome-dev/google-chrome-dev.tar.gz
-
-# also install from AUR:
-#gnome-defaults-list
-
-# i3
-#i3-wm i3status i3lock
+# ---------------------------------------------------
+# notes
+# ---------------------------------------------------
