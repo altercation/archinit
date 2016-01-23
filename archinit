@@ -30,8 +30,6 @@ OPTIONS=(
 filesystem  btrfs
 fsoptions   default
 encryption  true
-efi         false
-bootloader  grub
 )
 # NOTE: bootloader should probably be determined by EFI or no EFI
 
@@ -255,7 +253,7 @@ fi
 # ---------------------------------------------------
 
 for servicename in $SERVICES; do
-   systemctl enable $servicename
+    chrooted systemctl enable $servicename
 done
 
 
@@ -263,17 +261,16 @@ done
 # users / passwords
 # ---------------------------------------------------
 
-useradd -m \
-	-G wheel \
-	-s /usr/bin/$CONFIG[shell] \
-	$CONFIG[username]
+chrooted "useradd -m -G wheel \
+	          -s /usr/bin/$CONFIG[shell] \
+	          $CONFIG[username]"
 
 for username in root $CONFIG[username]; do
     print "Enter password for $username"
     while ! ${${${pass::=$(read -Ers "?Passphrase: ")}:#$(\
         read -Ers "?$(print "\nConfirmation: ")")}:+false};
         do print "\nDidn't match--try again:\n"; done; print
-    print -r $user:$pass | chpasswd
+    chrooted "print -r $user:$pass | chpasswd"
 done
 
 tmpfile=$(mktemp)
