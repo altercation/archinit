@@ -203,7 +203,7 @@ pacstrap $MOUNT $PACKAGES
 # http://www.freedesktop.org/wiki/Specifications/DiscoverablePartitionsSpec/
 
 if [[ ${(L)OPTIONS[encryption]} =~ (true|yes|1) ]]; then
-    genfstab -L -p $CONFIG[mount] > $MOUNT/etc/fstab
+    genfstab -L -p $MOUNT > $MOUNT/etc/fstab
 fi
 
 
