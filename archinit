@@ -43,7 +43,7 @@ btrfs-progs
 git
 openssh
 sudo
-terminus
+terminus-font
 vim
 zsh
 nvidia
@@ -106,9 +106,11 @@ sgdisk --mbrtogpt $DRIVE
 if [[ ${(L)efi} =~ (true|yes|1) ]]; then
     # efi (conforming to freedesktop.org $ESP partition code)
     BOOT=(name EFI type ef00)
+    print "EFI detected"
 else
     # non efi boot part (conforming to freedesktop.org $BOOT partition code)
     BOOT=(name BOOT type ea00)
+    print "EFI not detected - BIOS mode"
 fi
 
 sgdisk --new=1:0:+512M --change-name=1:$BOOT[name] -t 1:$BOOT[type] $DRIVE
@@ -130,9 +132,9 @@ if [[ ${(L)OPTIONS[encryption]} =~ (true|yes|1) ]]; then
         do print "\nDidn't match--try again:\n"; done; print
 
     # make partition, encrypt and open for lvm volume setup
-    sgdisk --new=0:0:0 --change-name=0:cryptlvm /dev/sda
-    print -r $pass | cryptsetup luksFormat /dev/disk/by-partlabel/cryptlvm
-    print -r $pass | cryptsetup open /dev/disk/by-partlabel/cryptlvm lvm
+    sgdisk --new=0:0:0 --change-name=0:crypt /dev/sda
+    print -r $pass | cryptsetup luksFormat /dev/disk/by-partlabel/crypt
+    print -r $pass | cryptsetup open /dev/disk/by-partlabel/crypt lvm
 
     # lvm configurations
     pvcreate /dev/mapper/lvm # physical volume
@@ -241,9 +243,10 @@ if [[ ${(L)efi} =~ (true|yes|1) ]]; then
     # options     root=LABEL=System rw resume=LABEL=Swap quiet
     # EOF
 else
-    pacstrap $MOUNT grub
-    chrooted "grub-install $DRIVE; grub-mkconfig -o /boot/grub/grub.cfg"
-    #pacstrap $MOUNT syslinux gptfdisk mtools
+    #pacstrap $MOUNT grub
+    #chrooted "grub-install $DRIVE; grub-mkconfig -o /boot/grub/grub.cfg"
+    pacstrap $MOUNT syslinux gptfdisk mtools
+    syslinux-install_update -i -a -m -c $MOUNT
 fi
 
 
