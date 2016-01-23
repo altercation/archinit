@@ -269,8 +269,8 @@ chrooted "useradd -m -G wheel \
 	          -s /usr/bin/$CONFIG[shell] \
 	          $CONFIG[username]"
 
-for username in root $CONFIG[username]; do
-    print "Enter password for $username"
+for user in root $CONFIG[username]; do
+    print "Enter password for $user"
     while ! ${${${pass::=$(read -Ers "?Passphrase: ")}:#$(\
         read -Ers "?$(print "\nConfirmation: ")")}:+false};
         do print "\nDidn't match--try again:\n"; done; print
