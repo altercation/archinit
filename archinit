@@ -249,6 +249,65 @@ else
     #chrooted "grub-install $DRIVE; grub-mkconfig -o /boot/grub/grub.cfg"
     pacstrap $MOUNT syslinux gptfdisk mtools
     syslinux-install_update -i -a -m -c $MOUNT
+    mv $MOUNT/boot/syslinux/syslinux.cfg $MOUNT/boot/syslinux/syslinux.cfg.orig
+cat > $MOUNT/boot/syslinux/syslinux.cfg << EOF
+# Config file for Syslinux -
+# /boot/syslinux/syslinux.cfg
+#
+# see original file at /boot/syslinux/syslinux.cfg.orig
+#
+# Please review the wiki: https://wiki.archlinux.org/index.php/Syslinux
+# The wiki provides further configuration examples
+
+DEFAULT arch
+PROMPT 0        # Set to 1 if you always want to display the boot: prompt
+TIMEOUT 50
+
+# Menu Configuration
+# Either menu.c32 or vesamenu32.c32 must be copied to /boot/syslinux
+UI menu.c32
+#UI vesamenu.c32
+
+# Refer to http://syslinux.zytor.com/wiki/index.php/Doc/menu
+MENU TITLE Arch Linux
+#MENU BACKGROUND splash.png
+MENU COLOR border       30;44   #40ffffff #a0000000 std
+MENU COLOR title        1;36;44 #9033ccff #a0000000 std
+MENU COLOR sel          7;37;40 #e0ffffff #20ffffff all
+MENU COLOR unsel        37;44   #50ffffff #a0000000 std
+MENU COLOR help         37;40   #c0ffffff #a0000000 std
+MENU COLOR timeout_msg  37;40   #80ffffff #00000000 std
+MENU COLOR timeout      1;37;40 #c0ffffff #00000000 std
+MENU COLOR msg07        37;40   #90ffffff #a0000000 std
+MENU COLOR tabmsg       31;40   #30ffffff #00000000 std
+
+#APPEND root=/dev/sda3 rw
+
+LABEL arch
+    MENU LABEL Arch Linux
+    LINUX ../vmlinuz-linux
+    APPEND rw rd.luks.crypttab=0 rd.luks.allow-discards root=PARTLABEL=system rootflags=subvol=root,rw,x-systemd.device-timeout=0
+    INITRD ../initramfs-linux.img
+
+LABEL archfallback
+    MENU LABEL Arch Linux Fallback
+    LINUX ../vmlinuz-linux
+    APPEND rw rd.luks.crypttab=0 rd.luks.allow-discards root=PARTLABEL=system rootflags=subvol=root,rw,x-systemd.device-timeout=0
+    INITRD ../initramfs-linux-fallback.img
+
+LABEL hdt
+        MENU LABEL HDT (Hardware Detection Tool)
+        COM32 hdt.c32
+
+LABEL reboot
+        MENU LABEL Reboot
+        COM32 reboot.c32
+
+LABEL poweroff
+        MENU LABEL Poweroff
+        COM32 poweroff.c32
+EOF
+
 fi
 
 
@@ -295,15 +354,15 @@ visudo -cf $tmpfile \
 # change hooks and regenerate initcpio
 # ---------------------------------------------------
 
-# mv /etc/mkinitcpio.conf /etc/mkinitcpio.orig
-# cat > /etc/mkinitcpio.conf << EOF
-# MODULES="i915"
-# BINARIES=""
-# FILES=""
-# HOOKS="systemd sd-vconsole autodetect modconf block filesystems keyboard fsck"
-# EOF
-#
-# mkinitcpio -p linux
+mv $MOUNT/etc/mkinitcpio.conf /etc/mkinitcpio.orig || :
+cat > $MOUNT/etc/mkinitcpio.conf << EOF
+MODULES=""
+BINARIES=""
+FILES=""
+HOOKS="systemd sd-vconsole autodetect modconf block filesystems keyboard fsck"
+EOF
+
+chrooted "mkinitcpio -p linux"
 
 # ---------------------------------------------------
 # notes
