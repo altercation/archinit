@@ -39,6 +39,7 @@ base
 base-devel
 btrfs-progs
 git
+lvm2
 openssh
 sudo
 terminus-font
@@ -302,7 +303,7 @@ MENU COLOR tabmsg       31;40   #30ffffff #00000000 std
 LABEL arch
     MENU LABEL Arch Linux
     LINUX ../vmlinuz-linux
-    APPEND rw rd.luks.allow-discards rd.lvm.lv=storage/system rd.luks.uuid=$(lsblk ${DRIVE}2 -dno UUID) rd.lvm.lv=storage/swap root=PARTLABEL=system rootflags=subvol=/root,subvol=root,rw,x-systemd.device-timeout=0
+    APPEND rw rd.luks.crypttab=0 rd.luks.allow-discards rd.lvm.lv=storage/system rd.luks.uuid=$(lsblk ${DRIVE}2 -dno UUID) rd.lvm.lv=storage/swap root=PARTLABEL=system rootflags=subvol=/root,subvol=root,rw,x-systemd.device-timeout=0
     INITRD ../initramfs-linux.img
 
 LABEL archfallback
