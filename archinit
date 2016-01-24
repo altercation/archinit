@@ -50,7 +50,7 @@ nvidia-utils
 nvidia-libgl
 xorg
 gnome
-gnome-extras
+gnome-extra
 networkmanager
 network-manager-applet
 )
