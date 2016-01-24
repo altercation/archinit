@@ -299,11 +299,12 @@ MENU COLOR msg07        37;40   #90ffffff #a0000000 std
 MENU COLOR tabmsg       31;40   #30ffffff #00000000 std
 
 #APPEND root=/dev/sda3 rw
+#APPEND rw rd.luks.crypttab=0 rd.luks.allow-discards rd.lvm.lv=storage/system rd.luks.uuid=$(lsblk ${DRIVE}2 -dno UUID) rd.lvm.lv=storage/swap root=PARTLABEL=system rootflags=subvol=/root,subvol=root,rw,x-systemd.device-timeout=0
 
 LABEL arch
     MENU LABEL Arch Linux
     LINUX ../vmlinuz-linux
-    APPEND rw rd.luks.crypttab=0 rd.luks.allow-discards rd.lvm.lv=storage/system rd.luks.uuid=$(lsblk ${DRIVE}2 -dno UUID) rd.lvm.lv=storage/swap root=PARTLABEL=system rootflags=subvol=/root,subvol=root,rw,x-systemd.device-timeout=0
+    APPEND rw rd.luks.crypttab=0 rd.luks.allow-discards rd.lvm.lv=storage/system rd.luks.uuid=$(lsblk ${DRIVE}2 -dno UUID) rd.lvm.lv=storage/swap root=PARTLABEL=system rootflags=subvol=/root,subvol=root,rw
     INITRD ../initramfs-linux.img
 
 LABEL archfallback
