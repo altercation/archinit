@@ -235,16 +235,17 @@ EOF
 if [[ ${(L)efi} =~ (true|yes|1) ]]; then
     chrooted bootctl install
     # # create /boot/loader/loader.conf
-    # cat > /boot/loader/loader.conf << EOF
-    # timeout 3
-    # default arch*
-    # EOF
-    # cat > /boot/loader/entries/arch.conf << EOF
-    # title       Arch Linux
-    # linux       /vmlinuz-linux
-    # initrd      /initramfs-linux.img
-    # options     root=LABEL=System rw resume=LABEL=Swap quiet
-    # EOF
+cat > $MOUNT/boot/loader/loader.conf << EOF
+timeout 3
+default arch*
+EOF
+cat > /boot/loader/entries/arch.conf << EOF
+title       Arch Linux
+linux       /vmlinuz-linux
+initrd      /initramfs-linux.img
+options     rw rd.luks.allow-discards rd.lvm.lv=storage/system rd.luks.uuid=$(lsblk ${DRIVE}2 -dno UUID) rd.lvm.lv=storage/swap root=PARTLABEL=system rootflags=subvol=/root,subvol=root,rw,x-systemd.device-timeout=0
+EOF
+#options     root=LABEL=System rw resume=LABEL=Swap quiet
 else
     #pacstrap $MOUNT grub
     #chrooted "grub-install $DRIVE; grub-mkconfig -o /boot/grub/grub.cfg"
