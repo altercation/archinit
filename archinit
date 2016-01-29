@@ -5,7 +5,7 @@ setopt ERR_EXIT EXTENDED_GLOB
 # curl -LO http://links.ethanschoonover.com/archinit
 
 typeset -A BOOT CONFIG DEVICE INIT INSTALL MKINITCPIO OPTIONS
-typeset -a PACKAGES SERVICES
+typeset -a PACKAGES ADDITIONAL_PACKAGES SERVICES
 
 TRAPZERR () { print "\nUNHANDLED ERROR"; exit }
 
@@ -55,6 +55,43 @@ networkmanager
 network-manager-applet
 )
 
+REPOS="
+
+[xyne-any]
+# A repo for Xyne's own projects: http://xyne.archlinux.ca/projects/
+# Packages for "any" architecture.
+# Use this repo only if there is no matching [xyne-*] repo for your architecture.
+SigLevel = Required
+Server = http://xyne.archlinux.ca/repos/xyne
+
+[xyne-i686]
+# A repo for Xyne's own projects: http://xyne.archlinux.ca/projects/
+# Packages for the "i686" architecture.
+# Note that this includes all packages in [xyne-any].
+SigLevel = Required
+Server = http://xyne.archlinux.ca/repos/xyne
+
+[xyne-x86_64]
+# A repo for Xyne's own projects: http://xyne.archlinux.ca/projects/
+# Packages for the "x86_64" architecture.
+# Note that this includes all packages in [xyne-any].
+SigLevel = Required
+Server = http://xyne.archlinux.ca/repos/xyne
+
+[infinality-bundle]
+Server = http://bohoomil.com/repo/$arch
+
+[infinality-bundle-fonts]
+Server = http://bohoomil.com/repo/fonts
+
+[repo-ck]
+Server = http://repo-ck.com/$arch
+"
+
+ADDITIONAL_PACKAGES=(
+colordiff
+)
+
 # services that will be enabled via "systemctl enable ..."
 SERVICES=(
 gdm
@@ -66,6 +103,11 @@ AUR=(
 aura-bin
 google-chrome
 gnome-defaults-list
+myrepos
+vcsh
+powerpill
+customizepkg-git
+aur-git
 )
 
 
