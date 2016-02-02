@@ -45,17 +45,61 @@ sudo
 terminus-font
 vim
 zsh
+)
+
+SERVICES=(
+)
+
+# NVIDIA
+PACKAGES+=(
 nvidia
 nvidia-utils
 nvidia-libgl
-xorg
+)
+
+# X + GNOME
+PACKAGES+=(
+xorg-server
+xorg-server-utils
+xorg-apps
 gnome
 gnome-extra
 networkmanager
 network-manager-applet
+packagekit
+gnome-packagekit
+polkit-gnome
+)
+
+SERVICES+=(
+gdm
+NetworkManager
+)
+
+# CUPS
+PACKAGES+=(
+cups
+ghostscript
+gsfonts
+cups-pdf
+hplip
+foomatic-db
+foomatic-db-engine
+footmatic-db-nonfree
+system-config-printer
+)
+# NOTE gutenprint causes problems!
+# NOTE foomatic* may not be necessary
+
+SERVICES+=(
+org.cups.cupsd
+cups-browsed
+avahi-daemon
 )
 
 REPOS="
+
+# xyne repos are primarily for powerpill
 
 [xyne-any]
 # A repo for Xyne's own projects: http://xyne.archlinux.ca/projects/
@@ -96,7 +140,12 @@ colordiff
 SERVICES=(
 gdm
 NetworkManager
+org.cups.cupsd
+cups-browsed
+avahi-daemon
 )
+# NOTE: avahi-daemon started/enabled independently may not be necessary for
+#       just cups-browsed support
 
 # aur packages to either install or queue up for reboot install
 AUR=(
